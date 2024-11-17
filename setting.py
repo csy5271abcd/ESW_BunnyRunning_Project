@@ -86,4 +86,21 @@ background.paste(star_image, (45, 120), star_image)
 joystick.disp.image(background)
 
 
+joystick=Joystick()
+back_image = Image.new("RGBA", (joystick.width, joystick.height), (255, 255,255, 100))  # 배경 이미지 생성
+fore_image = Image.open('/home/choisuyeon/ESW/background.png').resize((240,220)) # 앞쪽 이미지 불러오기
 
+ # (100, 150) 위치에 앞쪽 이미지를 배경 이미지에 붙여넣기
+back_image.paste(fore_image, (0, 0), fore_image)  # 세 번째 인자는 투명도 적용
+joystick.disp.image(back_image)
+
+def background_update():
+        """
+        배경을 업데이트하여 오른쪽에서 왼쪽으로 이동시킵니다.
+        """
+        offset -= 2  # 왼쪽으로 이동
+        if offset <= width:
+            self.offset = 0  # 배경이 화면을 넘어가면 초기화
+
+        back_image.paste(fore_image, (self.offset, 0), fore_image)  # 세 번째 인자는 투명도 적용
+        joystick.disp.image(back_image)
