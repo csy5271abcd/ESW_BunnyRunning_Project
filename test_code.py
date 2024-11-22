@@ -1,3 +1,4 @@
+# 필요한 라이브러리 import 
 import time
 import random
 from colorsys import hsv_to_rgb
@@ -7,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 from adafruit_rgb_display import st7789
 from setting import Joystick
 
-
+# 필요한 이미지 불러오기
 RABBIT_RUNNING=[Image.open("/home/choisuyeon/ESW/frame_rabbit_running/rabbit_running_1.png").resize((60,60)),
          Image.open("/home/choisuyeon/ESW/frame_rabbit_running/rabbit_running_2.png").resize((60,60)),
          Image.open("/home/choisuyeon/ESW/frame_rabbit_running/rabbit_running_3.png").resize((60,60)),
@@ -39,30 +40,35 @@ DOGS=[Image.open("/home/choisuyeon/ESW/dog_hammer.png").resize((60,60)),
 
 CARROT=Image.open("/home/choisuyeon/ESW/carrot.png").resize((30,30))
 STAR=Image.open("/home/choisuyeon/ESW/star.png").resize((30,30))
+PLANE=Image.open("/home/choisuyeon/ESW/plane.png").resize((40,40))
 
 BG=Image.open("/home/choisuyeon/ESW/background.png").resize((240,240))
 
 # Rabbit Class
 class Rabbit:
-    X_POS = 20
+    X_POS = 20  # 토끼는 제자리에서 동작 (x좌표:20, y좌표:180)
     Y_POS = 180
-    Y_POS_SLIDE = 200
+   
     GROUND_LEVEL = 180  # 땅의 Y 좌표
-    JUMP_VEL = 6
+    JUMP_VEL = 5 # 올라간 다음 내려올 경우 5씩 감소
 
     def __init__(self):
-        self.run_img = RABBIT_RUNNING
+        self.run_img = RABBIT_RUNNING # Rabbit class attribute로 필요한 프레임 이미지를 불러옴
         self.jump_img = RABBIT_JUMPING
         self.down_img = RABBIT_JUMPING
         self.riding_img = RABBIT_RIDING
-        self.rabbit_down = False
+        self.slide_img = RABBIT_SLIDING
+
+        self.rabbit_down = False  
         self.rabbit_run = True
         self.rabbit_jump = False
+        self.rabbit_slide=False
         self.riding_mode = False  # 별 충돌로 인한 라이딩 모드
         self.riding_timer = 0  # 라이딩 지속 시간
+
         self.step_index = 0
         self.jump_vel = self.JUMP_VEL
-        self.fall_vel = 15  # 하강 속도
+        self.fall_vel = 19  # rabbit_down일 경우 하강 속도 증가
         self.image = self.run_img[0]
         self.rabbit_x = self.X_POS
         self.rabbit_y = self.Y_POS
@@ -74,6 +80,8 @@ class Rabbit:
             self.jump()
         elif self.rabbit_down:
             self.fall()  # 하강 동작 호출
+        elif self.rabbit_slide:
+            self.slide()
         elif self.rabbit_run:
             self.run()
 
@@ -103,33 +111,34 @@ class Rabbit:
             self.rabbit_y += self.fall_vel  # 하강 속도만큼 Y 좌표 증가
         else:
             self.rabbit_y = self.GROUND_LEVEL  # 땅에 도달하면 멈춤
-            self.rabbit_down = False  # 슬라이드 상태 종료
+            self.rabbit_down = False  # 하강 상태 종료
             self.rabbit_run = True  # 다시 런 상태로 복귀
+
+    def slide(self):
+        """현재 Y좌표를 기준으로 슬라이드 동작"""
+        if self.rabbit_slide:
+            if not hasattr(self, "original_y"):  # 슬라이드 시작 시 Y좌표 저장
+                self.original_y = self.rabbit_y  # 현재 Y좌표를 저장
+                self.rabbit_y -= 10  # 슬라이드 위치로 이동
+                self.slide_start_time = time.time()  # 슬라이드 시작 시간 기록
+
+            self.image = self.slide_img
+
+            # 슬라이드 상태를 2초 동안 유지
+            if time.time() - self.slide_start_time > 2:  # 2초 경과 후 슬라이드 상태 종료
+                self.rabbit_slide = False
+                self.rabbit_y = self.original_y  # 원래 Y좌표로 복귀
+                del self.original_y  # 저장된 Y좌표 초기화
+        else:
+            if hasattr(self, "original_y"):  # 슬라이드 종료 후 Y좌표 초기화
+                del self.original_y
+
 
     def ride(self):
         """라이딩 동작"""
         frame_count = len(self.riding_img)  # 애니메이션 프레임 수
         self.image = self.riding_img[self.step_index // 5 % frame_count]  # 유효한 프레임 인덱스 유지
         self.step_index += 1
-        
-
-    def draw(self, canvas):
-        canvas.paste(self.image, (int(self.rabbit_x), int(self.rabbit_y)), self.image)
-
-    def handle_input(self, joystick):
-        """입력 처리"""
-        if not joystick.button_U.value:  # Jump
-            self.rabbit_jump = True
-            self.rabbit_run = False
-            self.rabbit_down = False
-        elif not joystick.button_D.value:  # Fall
-            self.rabbit_down = True
-            self.rabbit_run = False
-            self.rabbit_jump = False
-        else:  # Run
-            self.rabbit_run = True
-            self.rabbit_down = False
-            self.rabbit_jump = False
 
     def activate_riding_mode(self, duration):
         """별 충돌로 라이딩 모드 활성화"""
@@ -142,7 +151,38 @@ class Rabbit:
             self.riding_timer -= 1
             if self.riding_timer <= 0:
                 self.riding_mode = False  # 라이딩 모드 종료
-                self.rabbit_run = True  # 라이딩 종료 후 런 상태로 복귀
+                self.rabbit_run = True  # 라이딩 종료 후 런 상태로 복귀    
+
+    def draw(self, canvas):
+        canvas.paste(self.image, (int(self.rabbit_x), int(self.rabbit_y)), self.image)
+
+    def handle_input(self, joystick):
+        """입력 처리"""
+        if not joystick.button_U.value:  # Jump
+            self.rabbit_jump = True
+            self.rabbit_run = False
+            self.rabbit_down = False
+            self.rabbit_slide=False
+
+        elif not joystick.button_D.value:  # Fall
+            self.rabbit_down = True
+            self.rabbit_run = False
+            self.rabbit_jump = False
+            self.rabbit_slide=False
+
+        elif not joystick.button_R.value:  # Slide
+            self.rabbit_slide = True
+            self.rabbit_run = False
+            self.rabbit_jump = False
+            self.rabbit_down=False
+
+        else:  # Run
+            self.rabbit_run = True
+            self.rabbit_down = False
+            self.rabbit_jump = False 
+            self.rabbit_slide=False   
+
+    
 
 # Obstacle Base Class
 class Obstacle:
@@ -166,16 +206,32 @@ class SmallCactus(Obstacle):
     def __init__(self, x):
         super().__init__(x, 180, SMALL_CACTUS)
 
-# LargeCactus Class
+# Dog Class
 class Dogs(Obstacle):
     def __init__(self, x):
         super().__init__(x, 180, DOGS)
 
+# Plane Class
+class Plane:
+    def __init__(self, canvas_width, canvas_height):
+        self.x = random.randint(0, canvas_width )
+        self.y = random.randint(50,150)
+        self.image = PLANE
+
+    def move(self, speed=5):
+        self.x -= speed
+
+    def draw(self, canvas):
+        canvas.paste(self.image, (int(self.x), int(self.y)), self.image)
+
+    def is_off_screen(self):
+        return self.x + self.image.width < 0
+    
 # Carrot Class
 class Carrot:
     def __init__(self, canvas_width, canvas_height):
         self.x = random.randint(0, canvas_width )
-        self.y = random.randint(0, canvas_height)
+        self.y = random.randint(50,canvas_height)
         self.image = CARROT
 
     def move(self, speed=5):
@@ -187,10 +243,11 @@ class Carrot:
     def is_off_screen(self):
         return self.x + self.image.width < 0
 
+# Star Class
 class Star:
     def __init__(self, canvas_width, canvas_height):
         self.x = random.randint(0, canvas_width)
-        self.y = random.randint(0, canvas_height)
+        self.y = random.randint(50, canvas_height)
         self.image = STAR
 
     def move(self, speed=5):
@@ -242,7 +299,7 @@ def check_collision(entity1, entity2):
     )
 
 def play_animation_loop(success, joystick):
-    
+    """성공 또는 실패 상태에 따라 애니메이션 출력"""
     canvas_width = joystick.width
     canvas_height = joystick.height
     frames = RABBIT_SUCCESS if success else RABBIT_FAILURE  # 성공/실패 프레임 선택
@@ -319,6 +376,7 @@ def game_loop():
         rabbit = Rabbit()
         background = Background(BG, 240, 240)
         obstacles = []
+        planes=[]
         carrots = []
         stars = []
 
@@ -364,15 +422,24 @@ def game_loop():
                 carrots.append(Carrot(240, 240))
 
             # 별 생성
-            if random.randint(1, 100) < 1:
+            if random.randint(1, 100) < 2:
                 stars.append(Star(240, 240))
+
+            # 비행기 생성
+            if random.randint(1,100) <5:
+                carrots.append(Plane(240,240))
 
             background.move(game_speed)
 
             for obstacle in obstacles:
                 obstacle.move(game_speed)
+
+            for plane in planes:
+                plane.move(game_speed)
+
             for carrot in carrots:
                 carrot.move(game_speed)
+            
             for star in stars:
                 star.move(game_speed)
 
@@ -388,16 +455,25 @@ def game_loop():
                         health += 1
                         carrots.remove(carrot)
 
+                for plane in planes:
+                    if check_collision(rabbit,carrot):
+                        health-=3
+                        planes.remove(plane)
+
+                
+
             # Riding 상태에서 별 충돌 처리
             for star in stars:
                 if check_collision(rabbit, star):
-                    rabbit.activate_riding_mode(duration=50)  # 라이딩 모드 
+                    rabbit.activate_riding_mode(duration=20)  # 라이딩 모드 
                     stars.remove(star)
 
             background.draw(canvas)
             rabbit.draw(canvas)
             for obstacle in obstacles:
                 obstacle.draw(canvas)
+            for plane in planes:
+                plane.draw(canvas)
             for carrot in carrots:
                 carrot.draw(canvas)
             for star in stars:
@@ -406,6 +482,7 @@ def game_loop():
             draw.text((50, 10), f"Health: {health}", fill="white", font=font_large)
 
             obstacles = [ob for ob in obstacles if not ob.is_off_screen()]
+            planes=[plane for plane in planes if not plane.is_off_screen()]
             carrots = [carrot for carrot in carrots if not carrot.is_off_screen()]
             stars = [star for star in stars if not star.is_off_screen()]
 
@@ -419,7 +496,7 @@ def game_loop():
                 game_running = False
             elif distance <= 0:
                 if health > 0:
-                    draw.text((20, 100), "SUCCESS", fill="green", align="center", font=font_large)
+                    draw.text((30, 100), "SUCCESS~!!", fill="green", align="center", font=font_large)
                     joystick.disp.image(canvas)
                     time.sleep(2)
                     success = True
