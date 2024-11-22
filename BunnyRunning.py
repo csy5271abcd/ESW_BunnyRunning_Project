@@ -128,7 +128,7 @@ class Rabbit():
         self.jump_vel=self.JUMP_VEL
         self.image=self.run_img[0]
 
-        self.slide_image_index = 0
+        
         self.run_image_index=0
 
         self.rabbit_x=self.X_POS

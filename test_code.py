@@ -24,6 +24,7 @@ RABBIT_RIDING=[Image.open("/home/choisuyeon/ESW/frame_rabbit_riding/rabbit_ridin
 
 RABBIT_JUMPING=Image.open("/home/choisuyeon/ESW/rabbit_jumping.png").resize((60,60))
 RABBIT_SLIDING=Image.open("/home/choisuyeon/ESW/rabbit_sliding.png").resize((60,40))
+RABBIT_EATING=[Image.open(f"/home/choisuyeon/ESW/frame_rabbit_eating/frame_rabbit_eating_{i:04d}.png").resize((240, 240)) for i in range(0, 64+1)]
 
 RABBIT_SUCCESS=[Image.open(f"/home/choisuyeon/ESW/frame_rabbit_success/rabbit_success_{i}.png").resize((240, 240)) for i in range(1, 13+1)]
 
@@ -45,43 +46,46 @@ BG=Image.open("/home/choisuyeon/ESW/background.png").resize((240,240))
 class Rabbit:
     X_POS = 20
     Y_POS = 180
-    Y_POS_SLIDE = 240
+    Y_POS_SLIDE = 200
+    GROUND_LEVEL = 180  # 땅의 Y 좌표
     JUMP_VEL = 6
 
     def __init__(self):
         self.run_img = RABBIT_RUNNING
         self.jump_img = RABBIT_JUMPING
-        self.slide_img = RABBIT_SLIDING
-        self.rabbit_slide = False
+        self.down_img = RABBIT_JUMPING
+        self.riding_img = RABBIT_RIDING
+        self.rabbit_down = False
         self.rabbit_run = True
         self.rabbit_jump = False
+        self.riding_mode = False  # 별 충돌로 인한 라이딩 모드
+        self.riding_timer = 0  # 라이딩 지속 시간
         self.step_index = 0
         self.jump_vel = self.JUMP_VEL
+        self.fall_vel = 15  # 하강 속도
         self.image = self.run_img[0]
         self.rabbit_x = self.X_POS
         self.rabbit_y = self.Y_POS
 
     def update(self):
-        if self.rabbit_jump:
+        if self.riding_mode:  # 라이딩 모드일 경우 라이딩 애니메이션 유지
+            self.ride()
+        elif self.rabbit_jump:
             self.jump()
-        elif self.rabbit_slide:
-            self.slide()
+        elif self.rabbit_down:
+            self.fall()  # 하강 동작 호출
         elif self.rabbit_run:
             self.run()
 
     def run(self):
-        self.image = self.run_img[self.step_index // 5]
+        """달리기 동작"""
+        frame_count = len(self.run_img)  # 애니메이션 프레임 수
+        self.image = self.run_img[self.step_index // 5 % frame_count]  # 유효한 프레임 인덱스 유지
         self.step_index += 1
-        self.step_index %= len(self.run_img) * 5
 
-    def slide(self):
-        if self.rabbit_slide:
-            self.image = self.slide_img
-            self.rabbit_y = self.Y_POS_SLIDE
-        else:
-            self.rabbit_y = self.Y_POS
 
     def jump(self):
+        """점프 동작"""
         if self.rabbit_jump:
             self.image = self.jump_img
             self.rabbit_y -= self.jump_vel * 5
@@ -92,23 +96,53 @@ class Rabbit:
                 self.jump_vel = self.JUMP_VEL
                 self.rabbit_y = self.Y_POS
 
+    def fall(self):
+        """하강 동작"""
+        self.image = self.down_img
+        if self.rabbit_y < self.GROUND_LEVEL:
+            self.rabbit_y += self.fall_vel  # 하강 속도만큼 Y 좌표 증가
+        else:
+            self.rabbit_y = self.GROUND_LEVEL  # 땅에 도달하면 멈춤
+            self.rabbit_down = False  # 슬라이드 상태 종료
+            self.rabbit_run = True  # 다시 런 상태로 복귀
+
+    def ride(self):
+        """라이딩 동작"""
+        frame_count = len(self.riding_img)  # 애니메이션 프레임 수
+        self.image = self.riding_img[self.step_index // 5 % frame_count]  # 유효한 프레임 인덱스 유지
+        self.step_index += 1
+        
+
     def draw(self, canvas):
         canvas.paste(self.image, (int(self.rabbit_x), int(self.rabbit_y)), self.image)
 
     def handle_input(self, joystick):
+        """입력 처리"""
         if not joystick.button_U.value:  # Jump
-            if not self.rabbit_jump:
-                self.rabbit_jump = True
-                self.rabbit_run = False
-                self.rabbit_slide = False
-        elif not joystick.button_R.value:  # Slide
-            self.rabbit_slide = True
+            self.rabbit_jump = True
+            self.rabbit_run = False
+            self.rabbit_down = False
+        elif not joystick.button_D.value:  # Fall
+            self.rabbit_down = True
             self.rabbit_run = False
             self.rabbit_jump = False
         else:  # Run
             self.rabbit_run = True
-            self.rabbit_slide = False
+            self.rabbit_down = False
             self.rabbit_jump = False
+
+    def activate_riding_mode(self, duration):
+        """별 충돌로 라이딩 모드 활성화"""
+        self.riding_mode = True
+        self.riding_timer = duration
+
+    def update_riding_timer(self):
+        """라이딩 타이머 업데이트"""
+        if self.riding_mode:
+            self.riding_timer -= 1
+            if self.riding_timer <= 0:
+                self.riding_mode = False  # 라이딩 모드 종료
+                self.rabbit_run = True  # 라이딩 종료 후 런 상태로 복귀
 
 # Obstacle Base Class
 class Obstacle:
@@ -143,6 +177,21 @@ class Carrot:
         self.x = random.randint(0, canvas_width )
         self.y = random.randint(0, canvas_height)
         self.image = CARROT
+
+    def move(self, speed=5):
+        self.x -= speed
+
+    def draw(self, canvas):
+        canvas.paste(self.image, (int(self.x), int(self.y)), self.image)
+
+    def is_off_screen(self):
+        return self.x + self.image.width < 0
+
+class Star:
+    def __init__(self, canvas_width, canvas_height):
+        self.x = random.randint(0, canvas_width)
+        self.y = random.randint(0, canvas_height)
+        self.image = STAR
 
     def move(self, speed=5):
         self.x -= speed
@@ -193,126 +242,216 @@ def check_collision(entity1, entity2):
     )
 
 def play_animation_loop(success, joystick):
-    """성공 또는 실패 상태에 따라 애니메이션 출력"""
+    
     canvas_width = joystick.width
     canvas_height = joystick.height
     frames = RABBIT_SUCCESS if success else RABBIT_FAILURE  # 성공/실패 프레임 선택
 
     # 새로운 도화지 생성
     new_canvas = Image.new("RGB", (canvas_width, canvas_height), "black")
-    for _ in range(3):  # 애니메이션 3번 반복
+    for _ in range(2):  # 애니메이션 3번 반복
         for frame in frames:
             temp_canvas = new_canvas.copy()  # 도화지 복사
             temp_canvas.paste(frame, (0, 0))  # 프레임을 중앙에 출력
             joystick.disp.image(temp_canvas)  # 화면에 출력
             time.sleep(0.1)  # 프레임 전환 속도
 
+def start_animation(joystick):
+    """게임 시작 애니메이션과 텍스트 한 문장씩 빠르게 표시"""
+    canvas_width = joystick.width
+    canvas_height = joystick.height
+    frames = RABBIT_EATING  # 애니메이션 프레임 리스트
+    messages = [
+        " I'm a rabbit.",
+        " I need to",
+        " steal carrots",
+        " from the ",
+        " farmer's field.",
+        " I must make ",
+        " it back",
+        " to my burrow.",
+        " The farmer is",
+        " chasing me!!!"
+    ]
 
-# Main Game Loop
+    # 새로운 도화지 생성
+    new_canvas = Image.new("RGB", (canvas_width, canvas_height), "black")
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_large = ImageFont.truetype(font_path, 30)  # 글씨 크기 25로 설정
+
+    for message in messages:
+        for frame in frames:
+            # 현재 프레임을 새로운 도화지에 복사
+            temp_canvas = new_canvas.copy()
+            temp_canvas.paste(frame, (0, 0))  # 프레임을 화면 중앙에 출력
+
+            # 텍스트 추가
+            draw = ImageDraw.Draw(temp_canvas)
+            text_x, text_y = 0, 0  # 텍스트 위치를 좌상단 (0, 0)으로 설정
+            draw.text((text_x, text_y), message, fill="black", font=font_large)
+
+            # 디스플레이에 출력
+            joystick.disp.image(temp_canvas)
+            time.sleep(1)  # 프레임 전환 속도를 0.1초로 더 빠르게 조정
+            break  # 각 프레임에서 메시지는 한 번만 출력하고 넘어감
+
+    # 모든 메시지가 출력된 후 함수 종료 -> 게임 시작
+
+
+
+def is_safe_to_add_obstacle(new_x, obstacles, min_distance=100):
+    """새 장애물이 기존 장애물과 최소 거리 이상 떨어져 있는지 확인"""
+    for obstacle in obstacles:
+        if abs(new_x - obstacle.x) < min_distance:
+            return False
+    return True
+
+def check_restart(joystick):
+    """button_A를 눌렀을 때 True를 반환"""
+    return not joystick.button_A.value  # button_A가 눌렸을 때 False에서 True로 전환
+
+
 def game_loop():
     joystick = Joystick()
-    rabbit = Rabbit()
-    background = Background(BG, 240, 240)
-   
-    obstacles = []
-    carrots = []
+    start_animation(joystick)  # 게임 시작 애니메이션 호출
+    while True:
+        # 초기 상태 설정
+        rabbit = Rabbit()
+        background = Background(BG, 240, 240)
+        obstacles = []
+        carrots = []
+        stars = []
 
-    canvas = Image.new("RGB", (joystick.width, joystick.height))
-    draw = ImageDraw.Draw(canvas)  # 텍스트 그리기 객체 생성
-      # 폰트 설정
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    font_large = ImageFont.truetype(font_path, 30)  # 글씨 크기 30 설정
-    
+        canvas = Image.new("RGB", (joystick.width, joystick.height))
+        draw = ImageDraw.Draw(canvas)  # 텍스트 그리기 객체 생성
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        font_large = ImageFont.truetype(font_path, 30)  # 글씨 크기 30 설정
 
-    health = 10
-    distance = 10000  
-    game_running = True
-    success_frames = RABBIT_SUCCESS  # 성공 애니메이션 프레임
-    failure_frames = RABBIT_FAILURE  # 실패 애니메이션 프레임
-    
+        health = 10
+        distance = 8000
+        game_speed = 15
+        game_running = True
+        success = False
+        fail = False
 
-    while game_running:
-        rabbit.handle_input(joystick)
-        rabbit.update()
+        while game_running:
+            rabbit.handle_input(joystick)
+            rabbit.update()
+            rabbit.update_riding_timer()  # 라이딩 타이머 업데이트
 
-        
-        distance -= 10  # Decrease distance by 10m per loop
-
-        if random.randint(1, 100) < 5:
-            if random.choice([True, False]):
-                obstacles.append(SmallCactus(240))
+            if rabbit.riding_mode:
+                game_speed = 50  # 라이딩 모드일 때 속도 증가
             else:
-                obstacles.append(Dogs(240))
+                game_speed = 20  # 기본 속도
 
-        if random.randint(1, 100) < 6:
-            carrots.append(Carrot(240, 240))
-
-        background.move(20)
-        for obstacle in obstacles:
-            obstacle.move(15)
-        for carrot in carrots:
-            carrot.move(15)
-
-        for obstacle in obstacles:
-            if check_collision(rabbit, obstacle):
-                health -= 2
-                obstacles.remove(obstacle)
-
-        for carrot in carrots:
-            if check_collision(rabbit, carrot):
-                health += 1
-                carrots.remove(carrot)
-
-        background.draw(canvas)
-        rabbit.draw(canvas)
-        for obstacle in obstacles:
-            obstacle.draw(canvas)
-        for carrot in carrots:
-            carrot.draw(canvas)
-
-        draw.text((50, 10), f"Health: {health}", fill="white", font=font_large)
-
-        obstacles = [ob for ob in obstacles if not ob.is_off_screen()]
-        carrots = [carrot for carrot in carrots if not carrot.is_off_screen()]
-
-        
-
-         # 게임 종료 조건
-        if health <= 0:
-            draw.text((20, 100), "Game Over", fill="red", align="center", font=font_large)
-            joystick.disp.image(canvas)  # 메시지 출력
-            time.sleep(2)  # 메시지 잠깐 표시
-            success = False
-            fail = True
-            game_running = False
-        elif distance <= 0:
-            if health > 0:
-                draw.text((20, 100), "SUCCESS", fill="green", align="center", font=font_large)
-                joystick.disp.image(canvas)  # 메시지 출력
-                time.sleep(2)  # 메시지 잠깐 표시
-                success = True
-                fail = False
+            # Riding 상태일 때 distance 50씩 감소
+            if rabbit.riding_mode:
+                distance -= 50
             else:
+                distance -= 10  # 일반 상태에서는 10씩 감소
+
+            # 장애물 생성
+            if random.randint(1, 100) < 5:
+                new_x = 240
+                if is_safe_to_add_obstacle(new_x, obstacles):
+                    if random.choice([True, False]):
+                        obstacles.append(SmallCactus(new_x))
+                    else:
+                        obstacles.append(Dogs(new_x))
+
+            # 당근 생성
+            if random.randint(1, 100) < 6:
+                carrots.append(Carrot(240, 240))
+
+            # 별 생성
+            if random.randint(1, 100) < 1:
+                stars.append(Star(240, 240))
+
+            background.move(game_speed)
+
+            for obstacle in obstacles:
+                obstacle.move(game_speed)
+            for carrot in carrots:
+                carrot.move(game_speed)
+            for star in stars:
+                star.move(game_speed)
+
+            # Riding 상태가 아닐 때 충돌 처리
+            if not rabbit.riding_mode:
+                for obstacle in obstacles:
+                    if check_collision(rabbit, obstacle):
+                        health -= 2
+                        obstacles.remove(obstacle)
+
+                for carrot in carrots:
+                    if check_collision(rabbit, carrot):
+                        health += 1
+                        carrots.remove(carrot)
+
+            # Riding 상태에서 별 충돌 처리
+            for star in stars:
+                if check_collision(rabbit, star):
+                    rabbit.activate_riding_mode(duration=50)  # 라이딩 모드 
+                    stars.remove(star)
+
+            background.draw(canvas)
+            rabbit.draw(canvas)
+            for obstacle in obstacles:
+                obstacle.draw(canvas)
+            for carrot in carrots:
+                carrot.draw(canvas)
+            for star in stars:
+                star.draw(canvas)
+
+            draw.text((50, 10), f"Health: {health}", fill="white", font=font_large)
+
+            obstacles = [ob for ob in obstacles if not ob.is_off_screen()]
+            carrots = [carrot for carrot in carrots if not carrot.is_off_screen()]
+            stars = [star for star in stars if not star.is_off_screen()]
+
+            # 게임 종료 조건
+            if health <= 0:
                 draw.text((20, 100), "Game Over", fill="red", align="center", font=font_large)
-                joystick.disp.image(canvas)  # 메시지 출력
-                time.sleep(2)  # 메시지 잠깐 표시
+                joystick.disp.image(canvas)
+                time.sleep(2)
                 success = False
                 fail = True
-            game_running = False
+                game_running = False
+            elif distance <= 0:
+                if health > 0:
+                    draw.text((20, 100), "SUCCESS", fill="green", align="center", font=font_large)
+                    joystick.disp.image(canvas)
+                    time.sleep(2)
+                    success = True
+                    fail = False
+                else:
+                    draw.text((20, 100), "Game Over", fill="red", align="center", font=font_large)
+                    joystick.disp.image(canvas)
+                    time.sleep(2)
+                    success = False
+                    fail = True
+                game_running = False
 
-        # 화면 업데이트
-        joystick.disp.image(canvas)
+            joystick.disp.image(canvas)
 
-        if not game_running:
-            if success:
-                play_animation_loop(success=True, joystick=joystick)  # 성공 애니메이션 출력
-            elif fail:
-                play_animation_loop(success=False, joystick=joystick)  # 실패 애니메이션 출력
-            time.sleep(3)  # 종료 후 3초 대기
-            break
-    
-    
+            if not game_running:
+                if success:
+                    play_animation_loop(success=True, joystick=joystick)
+                elif fail:
+                    play_animation_loop(success=False, joystick=joystick)
+                time.sleep(3)
+                break
 
+        # button_A를 기다리는 루프
+        while not check_restart(joystick):
+            canvas = Image.new("RGB", (joystick.width, joystick.height))
+            draw = ImageDraw.Draw(canvas)  # 텍스트 그리기 객체 생성
+            draw.text((20, 100), "Press A", fill="yellow", font=font_large)
+            draw.text((20, 150), "To Restart", fill="yellow", font=font_large)
+            joystick.disp.image(canvas)
+            time.sleep(0.1)
 
+        # Restart 게임 루프
+        continue
 
 game_loop()
